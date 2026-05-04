@@ -1,0 +1,2 @@
+-- Run via: createdb memory_app
+-- Or: psql -d postgres -c "CREATE DATABASE memory_app ENCODING 'UTF8';"

@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>网页时钟</title>
+<style>
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background: #1a1a2e;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: #e8e8ff;
+}
+
+.container {
+  text-align: center;
+}
+
+/* 模拟时钟容器 */
+.analog-wrapper {
+  position: relative;
+  width: 300px;
+  height: 300px;
+  margin: 0 auto 28px;
+}
+
+.analog-wrapper canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+}
+
+/* 数字时钟 */
+.digital-clock {
+  font-size: 4.5rem;
+  font-weight: 200;
+  letter-spacing: 0.08em;
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 6px;
+}
+
+.digital-clock .separator {
+  animation: blink 1s step-end infinite;
+  color: rgba(232, 232, 255, 0.3);
+}
+
+@keyframes blink {
+  50% { opacity: 0; }
+}
+
+.date-display {
+  font-size: 1rem;
+  color: rgba(232, 232, 255, 0.4);
+  letter-spacing: 0.06em;
+}
+
+.toggle-btn {
+  margin-top: 26px;
+  padding: 8px 24px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.25s;
+}
+
+.toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.25);
+  color: rgba(255, 255, 255, 0.7);
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="analog-wrapper" id="analogWrapper">
+    <canvas id="canvas"></canvas>
+  </div>
+
+  <div class="digital-clock">
+    <span id="hours">00</span><span class="separator">:</span><span id="minutes">00</span><span class="separator">:</span><span id="seconds">00</span>
+  </div>
+  <div class="date-display" id="dateDisplay"></div>
+
+  <button class="toggle-btn" id="toggleBtn">隐藏时钟表盘</button>
+</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const wrapper = document.getElementById('analogWrapper');
+
+// 尺寸
+const SIZE = 300;
+const DPR = window.devicePixelRatio || 1;
+const S = SIZE * DPR;
+canvas.width = S;
+canvas.height = S;
+canvas.style.width = SIZE + 'px';
+canvas.style.height = SIZE + 'px';
+
+const CX = S / 2;          // 圆心 X (canvas 坐标)
+const CY = S / 2;          // 圆心 Y
+const R = S / 2 - 8;       // 半径
+
+// ---- 离屏 canvas：静态表盘 ----
+const offscreen = document.createElement('canvas');
+offscreen.width = S;
+offscreen.height = S;
+const offCtx = offscreen.getContext('2d');
+
+function drawFace() {
+  const oc = offCtx;
+  const cx = S / 2, cy = S / 2, r = R;
+
+  // 表盘底色
+  const grad = oc.createRadialGradient(cx, cy, 0, cx, cy, r);
+  grad.addColorStop(0, '#f8f8ff');
+  grad.addColorStop(0.9, '#ececf5');
+  grad.addColorStop(1, '#dddde8');
+  oc.beginPath();
+  oc.arc(cx, cy, r, 0, Math.PI * 2);
+  oc.fillStyle = grad;
+  oc.fill();
+
+  // 外圈边框
+  oc.beginPath();
+  oc.arc(cx, cy, r, 0, Math.PI * 2);
+  oc.strokeStyle = '#b0b0c4';
+  oc.lineWidth = 2 * DPR;
+  oc.stroke();
+
+  // 内环装饰
+  oc.beginPath();
+  oc.arc(cx, cy, r * 0.96, 0, Math.PI * 2);
+  oc.strokeStyle = 'rgba(0,0,0,0.05)';
+  oc.lineWidth = 1 * DPR;
+  oc.stroke();
+
+  // 刻度
+  for (let i = 0; i < 60; i++) {
+    const angle = i * 6 * Math.PI / 180 - Math.PI / 2;
+    const isMajor = i % 5 === 0;
+    const innerR = isMajor ? r * 0.87 : r * 0.93;
+    const outerR = r * 0.97;
+
+    oc.beginPath();
+    oc.moveTo(cx + innerR * Math.cos(angle), cy + innerR * Math.sin(angle));
+    oc.lineTo(cx + outerR * Math.cos(angle), cy + outerR * Math.sin(angle));
+    oc.strokeStyle = isMajor ? 'rgba(0,0,0,0.78)' : 'rgba(0,0,0,0.22)';
+    oc.lineWidth = isMajor ? (2.5 * DPR) : (1.2 * DPR);
+    oc.lineCap = 'round';
+    oc.stroke();
+  }
+
+  // 数字
+  oc.fillStyle = 'rgba(0,0,0,0.82)';
+  oc.textAlign = 'center';
+  oc.textBaseline = 'middle';
+  const fontSize = Math.round(r * 0.11);
+  oc.font = `600 ${fontSize}px -apple-system, "Helvetica Neue", sans-serif`;
+
+  for (let i = 1; i <= 12; i++) {
+    const angle = i * 30 * Math.PI / 180 - Math.PI / 2;
+    const nr = r * 0.77;
+    oc.fillText(i, cx + nr * Math.cos(angle), cy + nr * Math.sin(angle));
+  }
+
+  // 底部小字
+  oc.fillStyle = 'rgba(0,0,0,0.15)';
+  oc.font = `${Math.round(r * 0.04)}px -apple-system, sans-serif`;
+  oc.fillText('●', cx, cy + r * 0.14);
+}
+
+// ---- 绘制指针 ----
+function drawHands() {
+  const now = new Date();
+  const h = now.getHours();
+  const m = now.getMinutes();
+  const s = now.getSeconds();
+  const ms = now.getMilliseconds();
+
+  const hDeg = ((h % 12) * 60 + m) * 0.5 + s * 0.5 / 60;
+  const mDeg = (m * 60 + s) * 0.1 + ms * 0.001 / 600;
+  const sDeg = (s * 1000 + ms) * 0.006;
+
+  // 先复制静态表盘
+  ctx.clearRect(0, 0, S, S);
+  ctx.drawImage(offscreen, 0, 0);
+
+  // --- 时针 ---
+  ctx.save();
+  ctx.translate(CX, CY);
+  ctx.rotate(hDeg * Math.PI / 180);
+
+  ctx.shadowColor = 'rgba(0,0,0,0.25)';
+  ctx.shadowBlur = 6 * DPR;
+
+  // 主体
+  ctx.beginPath();
+  ctx.moveTo(-6 * DPR, 20 * DPR);
+  ctx.lineTo(-4.5 * DPR, -R * 0.46);
+  ctx.quadraticCurveTo(0, -R * 0.52, 4.5 * DPR, -R * 0.46);
+  ctx.lineTo(6 * DPR, 20 * DPR);
+  ctx.closePath();
+  ctx.fillStyle = '#1a1a2e';
+  ctx.fill();
+
+  // 高光条
+  ctx.beginPath();
+  ctx.moveTo(-1.5 * DPR, 18 * DPR);
+  ctx.lineTo(-1.5 * DPR, -R * 0.40);
+  ctx.quadraticCurveTo(0, -R * 0.46, 1.5 * DPR, -R * 0.40);
+  ctx.lineTo(1.5 * DPR, 18 * DPR);
+  ctx.closePath();
+  ctx.fillStyle = '#35355a';
+  ctx.fill();
+
+  ctx.restore();
+
+  // --- 分针 ---
+  ctx.save();
+  ctx.translate(CX, CY);
+  ctx.rotate(mDeg * Math.PI / 180);
+
+  ctx.shadowColor = 'rgba(0,0,0,0.2)';
+  ctx.shadowBlur = 5 * DPR;
+
+  ctx.beginPath();
+  ctx.moveTo(-4.5 * DPR, 26 * DPR);
+  ctx.lineTo(-3 * DPR, -R * 0.72);
+  ctx.quadraticCurveTo(0, -R * 0.78, 3 * DPR, -R * 0.72);
+  ctx.lineTo(4.5 * DPR, 26 * DPR);
+  ctx.closePath();
+  ctx.fillStyle = '#2a2a4e';
+  ctx.fill();
+
+  // 高光
+  ctx.beginPath();
+  ctx.moveTo(-1 * DPR, 24 * DPR);
+  ctx.lineTo(-1 * DPR, -R * 0.66);
+  ctx.lineTo(1 * DPR, -R * 0.66);
+  ctx.lineTo(1 * DPR, 24 * DPR);
+  ctx.closePath();
+  ctx.fillStyle = '#40406a';
+  ctx.fill();
+
+  ctx.restore();
+
+  // --- 秒针 ---
+  const sRad = sDeg * Math.PI / 180;
+  ctx.save();
+  ctx.translate(CX, CY);
+  ctx.rotate(sRad);
+
+  ctx.shadowColor = 'rgba(200, 50, 50, 0.3)';
+  ctx.shadowBlur = 6 * DPR;
+
+  // 秒针主体 (尖端到中心)
+  ctx.beginPath();
+  ctx.moveTo(-1.5 * DPR, -R * 0.80);
+  ctx.lineTo(-1.5 * DPR, 0);
+  ctx.lineTo(1.5 * DPR, 0);
+  ctx.lineTo(1.5 * DPR, -R * 0.80);
+  ctx.closePath();
+  ctx.fillStyle = '#d04040';
+  ctx.fill();
+
+  // 尾部
+  ctx.beginPath();
+  ctx.moveTo(-1.5 * DPR, 0);
+  ctx.lineTo(-1.5 * DPR, R * 0.18);
+  ctx.lineTo(1.5 * DPR, R * 0.18);
+  ctx.lineTo(1.5 * DPR, 0);
+  ctx.closePath();
+  ctx.fillStyle = '#d04040';
+  ctx.fill();
+
+  // 尾部圆头
+  ctx.beginPath();
+  ctx.arc(0, R * 0.14, 3 * DPR, 0, Math.PI * 2);
+  ctx.fillStyle = '#d04040';
+  ctx.fill();
+
+  // 尖端圆头
+  ctx.beginPath();
+  ctx.arc(0, -R * 0.80, 2.5 * DPR, 0, Math.PI * 2);
+  ctx.fillStyle = '#d04040';
+  ctx.fill();
+
+  ctx.restore();
+
+  // --- 中心装饰 (无阴影，在顶层) ---
+  ctx.beginPath();
+  ctx.arc(CX, CY, 7 * DPR, 0, Math.PI * 2);
+  ctx.fillStyle = '#1a1a2e';
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.arc(CX, CY, 3.5 * DPR, 0, Math.PI * 2);
+  ctx.fillStyle = '#d04040';
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.arc(CX, CY, 1.5 * DPR, 0, Math.PI * 2);
+  ctx.fillStyle = '#fff';
+  ctx.fill();
+}
+
+// 初始化表盘
+drawFace();
+drawHands();
+
+// 更新数字 + 指针
+function tick() {
+  const now = new Date();
+
+  // 数字时钟
+  document.getElementById('hours').textContent = String(now.getHours()).padStart(2, '0');
+  document.getElementById('minutes').textContent = String(now.getMinutes()).padStart(2, '0');
+  document.getElementById('seconds').textContent = String(now.getSeconds()).padStart(2, '0');
+
+  // 日期
+  const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
+  document.getElementById('dateDisplay').textContent =
+    `${now.getFullYear()}年${String(now.getMonth()+1).padStart(2,'0')}月${String(now.getDate()).padStart(2,'0')}日 星期${weekdays[now.getDay()]}`;
+
+  drawHands();
+  requestAnimationFrame(tick);
+}
+
+tick();
+
+// 切换
+let showAnalog = true;
+document.getElementById('toggleBtn').addEventListener('click', () => {
+  showAnalog = !showAnalog;
+  document.getElementById('analogWrapper').style.display = showAnalog ? 'block' : 'none';
+  document.getElementById('toggleBtn').textContent = showAnalog ? '隐藏时钟表盘' : '显示时钟表盘';
+});
+</script>
+</body>
+</html>
